@@ -4,6 +4,16 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WINDOW_SIZE = parseInt(process.env.WINDOW_SIZE, 10);
+const BEARER_TOKEN = process.env.BEARER_TOKEN;
+let window = [];
+
+// Function to calculate average
+const calculateAverage = (numbers) => {
+    if (numbers.length === 0) return 0;
+    const sum = numbers.reduce((acc, num) => acc + num, 0);
+    return (sum / numbers.length).toFixed(2);
+};
 
 // Function to fetch numbers from test server
 const fetchNumbers = async (numberId) => {
@@ -20,10 +30,15 @@ const fetchNumbers = async (numberId) => {
         const response = await axios.get(url, {
             timeout: 500,
             headers: {
-                'Authorization': `Bearer ${process.env.BEARER_TOKEN}`
+                'Authorization': `Bearer ${BEARER_TOKEN}`
             }
         });
-        return response.data.numbers;
+
+        if (response.status !== 200) {
+            throw new Error(`Failed to fetch numbers. Status: ${response.status}`);
+        }
+
+        return response.data.numbers || [];
     } catch (error) {
         console.error(`Error fetching numbers: ${error.message}`);
         return [];
@@ -39,11 +54,31 @@ app.get('/numbers/:numberId', async (req, res) => {
         return res.status(400).json({ error: 'Invalid number ID' });
     }
 
-    const numbers = await fetchNumbers(numberId);
+    try {
+        const numbers = await fetchNumbers(numberId);
+        const prevState = [...window];
 
-    res.json({
-        numbers
-    });
+        numbers.forEach(number => {
+            if (!window.includes(number)) {
+                if (window.length >= WINDOW_SIZE) {
+                    window.shift();
+                }
+                window.push(number);
+            }
+        });
+
+        const avg = calculateAverage(window);
+
+        res.json({
+            numbers,
+            windowPrevState: prevState,
+            windowCurrState: window,
+            average: avg
+        });
+    } catch (error) {
+        console.error(`Error processing request: ${error.message}`);
+        res.status(500).json({ error: 'Failed to process request' });
+    }
 });
 
 // Start server
